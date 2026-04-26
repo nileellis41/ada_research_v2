@@ -1,0 +1,252 @@
+/* ===== Ada Research — Dark Theme ===== */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    background-color: #0f1419;
+    color: #e6e9ef;
+    font-family: -apple-system, "Segoe UI", "Inter", sans-serif;
+    font-size: 13px;
+    margin: 0;
+    padding: 0;
+}
+
+/* ===== App Header ===== */
+.app-header {
+    background-color: #1a1f2e;
+    border-bottom: 1px solid #2d3548;
+    padding: 0 24px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ===== Tabs ===== */
+.custom-tabs { background-color: #0f1419 !important; border-bottom: 1px solid #2d3548 !important; }
+.custom-tab {
+    background-color: #1a1f2e !important;
+    color: #9aa3b8 !important;
+    border: 1px solid #2d3548 !important;
+    border-bottom: none !important;
+    padding: 8px 18px !important;
+    font-weight: 500 !important;
+    margin-right: 2px !important;
+    font-family: inherit !important;
+    font-size: 13px !important;
+}
+.custom-tab--selected {
+    background-color: #0f1419 !important;
+    color: #e6e9ef !important;
+    border-bottom: 2px solid #5b9bd5 !important;
+}
+.custom-tab:hover { background-color: #242937 !important; color: #e6e9ef !important; }
+
+/* ===== Stat Cards ===== */
+.stat-card {
+    background-color: #1a1f2e;
+    border: 1px solid #2d3548;
+    border-radius: 6px;
+    padding: 10px 12px;
+    flex: 1;
+    min-height: 80px;
+    min-width: 120px;
+}
+.stat-label { color: #9aa3b8; font-size: 12px; margin-bottom: 4px; }
+.stat-value { font-size: 22px; font-weight: bold; color: #e6e9ef; }
+.stat-sublabel { color: #9aa3b8; font-size: 11px; margin-top: 2px; }
+
+/* ===== Signal Badges ===== */
+.signal-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 12px;
+    text-align: center;
+    white-space: nowrap;
+}
+.sig-STRONG_BUY  { background-color: #4caf50; color: white; }
+.sig-BUY         { background-color: #2d6a30; color: #4caf50; }
+.sig-HOLD        { background-color: #7a5520; color: #ffb74d; }
+.sig-SELL        { background-color: #7a3030; color: #e57373; }
+.sig-STRONG_SELL { background-color: #e57373; color: white; }
+
+/* ===== Buttons ===== */
+.ada-btn {
+    background-color: #1a1f2e;
+    color: #e6e9ef;
+    border: 1px solid #2d3548;
+    border-radius: 4px;
+    padding: 6px 14px;
+    min-height: 30px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: background-color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.ada-btn:hover { background-color: #242937; border-color: #5b9bd5; }
+.ada-btn:active { background-color: #7eb7e8; color: #0f1419; }
+.ada-btn:disabled { color: #9aa3b8; cursor: not-allowed; opacity: 0.6; }
+.ada-btn-primary { background-color: #5b9bd5 !important; color: white !important; border-color: #5b9bd5 !important; }
+.ada-btn-primary:hover { background-color: #7eb7e8 !important; border-color: #7eb7e8 !important; }
+
+/* ===== Upload Zone ===== */
+.upload-zone {
+    border: 2px dashed #2d3548;
+    border-radius: 8px;
+    background-color: #1a1f2e;
+    color: #9aa3b8;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s, background-color 0.15s;
+    padding: 24px;
+}
+.upload-zone:hover { border-color: #5b9bd5; background-color: #242937; color: #5b9bd5; }
+
+/* ===== Cards ===== */
+.ada-card {
+    background-color: #1a1f2e;
+    border: 1px solid #2d3548;
+    border-radius: 6px;
+    padding: 12px;
+}
+
+/* ===== Placeholder ===== */
+.placeholder-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 340px;
+    text-align: center;
+    padding: 40px;
+    gap: 12px;
+}
+.placeholder-panel h3 { color: #e6e9ef; margin: 0; font-size: 18px; }
+.placeholder-panel p { color: #9aa3b8; max-width: 500px; line-height: 1.6; margin: 0; }
+
+/* ===== Layout helpers ===== */
+.stats-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.split-layout { display: flex; gap: 16px; flex-wrap: wrap; }
+.split-left { flex: 1; min-width: 280px; }
+.split-right { flex: 2; min-width: 380px; }
+.tab-content { padding: 16px; background-color: #0f1419; min-height: calc(100vh - 96px); }
+
+/* ===== Typography ===== */
+.section-title { font-size: 22px; font-weight: 600; color: #e6e9ef; margin: 0 0 4px 0; }
+.section-subtitle { color: #9aa3b8; margin: 0 0 16px 0; line-height: 1.5; font-size: 12px; }
+.subsection-title { font-size: 16px; font-weight: 500; color: #e6e9ef; margin: 0 0 8px 0; }
+.dim-text { color: #9aa3b8; font-size: 12px; }
+.good-text { color: #4caf50; }
+.bad-text  { color: #e57373; }
+.warn-text { color: #ffb74d; }
+
+/* ===== Regime row ===== */
+.regime-row { display: flex; gap: 8px; }
+.regime-item {
+    flex: 1;
+    text-align: center;
+    background-color: #1a1f2e;
+    border: 1px solid #2d3548;
+    border-radius: 6px;
+    padding: 8px;
+    min-width: 80px;
+}
+.regime-label { color: #9aa3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.regime-value { font-size: 14px; font-weight: bold; color: #e6e9ef; margin-top: 3px; }
+
+/* ===== Dash DataTable dark overrides ===== */
+.dash-table-container { background-color: #1a1f2e !important; }
+.dash-header div.dash-cell { background-color: #0f1419 !important; color: #9aa3b8 !important; }
+.dash-spreadsheet-container .dash-spreadsheet-inner td { background-color: #1a1f2e !important; color: #e6e9ef !important; }
+.dash-spreadsheet-container .dash-spreadsheet-inner th { background-color: #0f1419 !important; color: #9aa3b8 !important; }
+.dash-spreadsheet td input { background-color: transparent !important; color: #e6e9ef !important; }
+.dash-table-container .row-1 td { background-color: #242937 !important; }
+
+/* ===== Inputs ===== */
+.ada-input {
+    background-color: #1a1f2e;
+    color: #e6e9ef;
+    border: 1px solid #2d3548;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    height: 30px;
+}
+.ada-input:focus { border-color: #5b9bd5; }
+.ada-textarea {
+    background-color: #1a1f2e;
+    color: #e6e9ef;
+    border: 1px solid #2d3548;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    width: 100%;
+}
+.ada-textarea:focus { border-color: #5b9bd5; }
+.ada-select {
+    background-color: #1a1f2e;
+    color: #e6e9ef;
+    border: 1px solid #2d3548;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    height: 30px;
+    outline: none;
+}
+
+/* ===== Loading ===== */
+._dash-loading { background: rgba(15, 20, 25, 0.7) !important; }
+
+/* ===== Scrollbars ===== */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0f1419; }
+::-webkit-scrollbar-thumb { background: #2d3548; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #9aa3b8; }
+
+/* ===== Nested Tabs (sub-tabs) ===== */
+.sub-tabs { border-bottom: 1px solid #2d3548 !important; }
+.sub-tab {
+    background-color: #0f1419 !important;
+    color: #9aa3b8 !important;
+    border: 1px solid transparent !important;
+    padding: 6px 14px !important;
+    font-size: 12px !important;
+    font-family: inherit !important;
+}
+.sub-tab--selected {
+    color: #5b9bd5 !important;
+    border-bottom: 2px solid #5b9bd5 !important;
+    background-color: #0f1419 !important;
+}
+
+/* ===== Plotly graph container ===== */
+.js-plotly-plot .plotly { background-color: transparent !important; }
+
+/* ===== Dash Dropdown dark theme ===== */
+.Select-control, .Select--single > .Select-control {
+    background-color: #1a1f2e !important;
+    border-color: #2d3548 !important;
+    color: #e6e9ef !important;
+}
+.Select-value-label { color: #e6e9ef !important; }
+.Select-placeholder { color: #9aa3b8 !important; }
+.Select-menu-outer { background-color: #1a1f2e !important; border-color: #2d3548 !important; }
+.Select-option { background-color: #1a1f2e !important; color: #e6e9ef !important; }
+.Select-option.is-focused { background-color: #242937 !important; }
+.Select-option.is-selected { background-color: #5b9bd5 !important; color: white !important; }
+.Select-arrow { border-top-color: #9aa3b8 !important; }
+.VirtualizedSelectOption { background-color: #1a1f2e !important; color: #e6e9ef !important; }
+.VirtualizedSelectFocusedOption { background-color: #242937 !important; }
+
+/* dcc.Dropdown newer API */
+.dash-dropdown .Select-control { background-color: #1a1f2e !important; }
+
