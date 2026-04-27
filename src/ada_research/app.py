@@ -1,4 +1,4 @@
-"""Application entry point — Dash/Plotly web UI.
+﻿"""Application entry point — Dash/Plotly web UI.
 
 Invoked by:
     - run.py (without installation)
@@ -30,17 +30,17 @@ def create_app() -> dash.Dash:
         stage1_sentiment,
         stage2_macro,
         sprint1_market,
-        sprint2_sectors,
-        sprint3_analysts,
-        sprint4_screener,
+        sprint3_sectors,
+        sprint4_analysts,
+        sprint2_screener,
     )
     for mod in (
         stage1_sentiment,
         stage2_macro,
         sprint1_market,
-        sprint2_sectors,
-        sprint3_analysts,
-        sprint4_screener,
+        sprint3_sectors,
+        sprint4_analysts,
+        sprint2_screener,
     ):
         mod.register_callbacks(app)
 
@@ -51,7 +51,7 @@ def main() -> None:
     log.info("starting Ada Research (Dash)")
     app = create_app()
 
-    # Pre-fetch all sector/industry data in the background so Sprint 3
+    # Pre-fetch all sector/industry data in the background so Sprint 4
     # is ready by the time the user navigates there.
     from ada_research.utils.config import config as _cfg
     if _cfg.has_fmp_key():

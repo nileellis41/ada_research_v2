@@ -1,10 +1,10 @@
-"""Sprint 3: Analyst Features (Dash/Plotly UI).
+﻿"""Sprint 4: Analyst Features (Dash/Plotly UI).
 
 What Wall Street thinks about a single ticker — price targets, B/H/S
 distribution, recent rating actions — plus a market-wide upgrades /
 downgrades feed.
 
-Mirrors the nine endpoints from `re/sprint3_analyst_features.ipynb`. All
+Mirrors the nine endpoints from `re/sprint4_analyst_features.ipynb`. All
 calls go through `FmpClient.safe(...)` so endpoints that are gated to a
 paid plan (notably `/price-target-news`) just degrade silently rather
 than crash the tab.
@@ -204,7 +204,7 @@ def layout() -> html.Div:
 
     return html.Div([
         # Triggers the market-wide grades news fetch on first render.
-        dcc.Interval(id="sp3-init", interval=400, max_intervals=1),
+        dcc.Interval(id="sp4-init", interval=400, max_intervals=1),
 
         section_header(
             "Sprint 4 — Analysts",
@@ -217,8 +217,8 @@ def layout() -> html.Div:
             html.Label("Ticker:",
                        style={"color": COLORS["text_dim"], "fontSize": "12px",
                               "whiteSpace": "nowrap"}),
-            text_input("sp3-ticker", value="AAPL", width="120px"),
-            btn("Fetch", "sp3-fetch-btn", primary=True),
+            text_input("sp4-ticker", value="AAPL", width="120px"),
+            btn("Fetch", "sp4-fetch-btn", primary=True),
         ], className="toolbar-row"),
 
         # ── Price target stat cards ──────────────────────────────────────
@@ -226,23 +226,23 @@ def layout() -> html.Div:
         html.Div([
             html.Div([
                 html.Div("Current",   className="stat-label"),
-                html.Div("—", id="sp3-stat-current",   className="stat-value"),
+                html.Div("—", id="sp4-stat-current",   className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Consensus", className="stat-label"),
-                html.Div("—", id="sp3-stat-consensus", className="stat-value"),
+                html.Div("—", id="sp4-stat-consensus", className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Median",    className="stat-label"),
-                html.Div("—", id="sp3-stat-median",    className="stat-value"),
+                html.Div("—", id="sp4-stat-median",    className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("High",      className="stat-label"),
-                html.Div("—", id="sp3-stat-high",      className="stat-value"),
+                html.Div("—", id="sp4-stat-high",      className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Low",       className="stat-label"),
-                html.Div("—", id="sp3-stat-low",       className="stat-value"),
+                html.Div("—", id="sp4-stat-low",       className="stat-value"),
             ], className="stat-card"),
         ], className="stats-row"),
 
@@ -253,7 +253,7 @@ def layout() -> html.Div:
                 dcc.Loading(
                     type="circle", color=COLORS["accent"],
                     children=dcc.Graph(
-                        id="sp3-bhs-chart",
+                        id="sp4-bhs-chart",
                         figure=_empty_fig(),
                         config={"displayModeBar": False},
                         style={"height": "260px"},
@@ -264,15 +264,15 @@ def layout() -> html.Div:
             html.Div([
                 html.Div([
                     html.Div("Total Analysts", className="stat-label"),
-                    html.Div("—", id="sp3-stat-total", className="stat-value"),
+                    html.Div("—", id="sp4-stat-total", className="stat-value"),
                 ], className="stat-card"),
                 html.Div([
                     html.Div("Buy + Strong Buy", className="stat-label"),
-                    html.Div("—", id="sp3-stat-buys", className="stat-value"),
+                    html.Div("—", id="sp4-stat-buys", className="stat-value"),
                 ], className="stat-card"),
                 html.Div([
                     html.Div("Sell + Strong Sell", className="stat-label"),
-                    html.Div("—", id="sp3-stat-sells", className="stat-value"),
+                    html.Div("—", id="sp4-stat-sells", className="stat-value"),
                 ], className="stat-card"),
             ], style={"flex": "1", "minWidth": "240px",
                       "display": "flex", "flexDirection": "column", "gap": "8px"}),
@@ -284,7 +284,7 @@ def layout() -> html.Div:
         dcc.Loading(
             type="circle", color=COLORS["accent"],
             children=dash_table.DataTable(
-                id="sp3-grades-table",
+                id="sp4-grades-table",
                 columns=[
                     {"name": "Date",    "id": "date"},
                     {"name": "Firm",    "id": "firm"},
@@ -306,7 +306,7 @@ def layout() -> html.Div:
                                 "fontSize": "12px", "marginTop": "12px",
                                 "marginBottom": "6px", "userSelect": "none"}),
             dash_table.DataTable(
-                id="sp3-estimates-table",
+                id="sp4-estimates-table",
                 columns=[{"name": "—", "id": "placeholder"}],  # rebuilt by callback
                 data=[],
                 page_size=8,
@@ -325,7 +325,7 @@ def layout() -> html.Div:
         dcc.Loading(
             type="circle", color=COLORS["accent"],
             children=dash_table.DataTable(
-                id="sp3-market-grades",
+                id="sp4-market-grades",
                 columns=[
                     {"name": "Date",    "id": "date"},
                     {"name": "Symbol",  "id": "symbol"},
@@ -340,7 +340,7 @@ def layout() -> html.Div:
                 **grades_ts,
             ),
         ),
-        status_label("sp3-market-status"),
+        status_label("sp4-market-status"),
 
     ], className="tab-content")
 
@@ -355,21 +355,21 @@ def register_callbacks(app: dash.Dash) -> None:
 
     # ── Per-ticker fetch ─────────────────────────────────────────────────
     @app.callback(
-        Output("sp3-stat-current",    "children"),
-        Output("sp3-stat-consensus",  "children"),
-        Output("sp3-stat-median",     "children"),
-        Output("sp3-stat-high",       "children"),
-        Output("sp3-stat-low",        "children"),
-        Output("sp3-stat-total",      "children"),
-        Output("sp3-stat-buys",       "children"),
-        Output("sp3-stat-sells",      "children"),
-        Output("sp3-bhs-chart",       "figure"),
-        Output("sp3-grades-table",    "data"),
-        Output("sp3-estimates-table", "columns"),
-        Output("sp3-estimates-table", "data"),
-        Output("sp3-status",          "children"),
-        Input("sp3-fetch-btn", "n_clicks"),
-        State("sp3-ticker",    "value"),
+        Output("sp4-stat-current",    "children"),
+        Output("sp4-stat-consensus",  "children"),
+        Output("sp4-stat-median",     "children"),
+        Output("sp4-stat-high",       "children"),
+        Output("sp4-stat-low",        "children"),
+        Output("sp4-stat-total",      "children"),
+        Output("sp4-stat-buys",       "children"),
+        Output("sp4-stat-sells",      "children"),
+        Output("sp4-bhs-chart",       "figure"),
+        Output("sp4-grades-table",    "data"),
+        Output("sp4-estimates-table", "columns"),
+        Output("sp4-estimates-table", "data"),
+        Output("sp4-status",          "children"),
+        Input("sp4-fetch-btn", "n_clicks"),
+        State("sp4-ticker",    "value"),
         prevent_initial_call=True,
     )
     def fetch(n_clicks, ticker_val):
@@ -444,9 +444,9 @@ def register_callbacks(app: dash.Dash) -> None:
 
     # ── Market-wide grade actions feed ───────────────────────────────────
     @app.callback(
-        Output("sp3-market-grades", "data"),
-        Output("sp3-market-status", "children"),
-        Input("sp3-init", "n_intervals"),
+        Output("sp4-market-grades", "data"),
+        Output("sp4-market-status", "children"),
+        Input("sp4-init", "n_intervals"),
         prevent_initial_call=False,
     )
     def fetch_market(_n):

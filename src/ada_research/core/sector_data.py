@@ -1,4 +1,4 @@
-"""Sector data bundle — collects all Sprint 2/3 FMP data in one pass.
+﻿"""Sector data bundle — collects all Sprint 3/4 FMP data in one pass.
 
 On app startup, `prefetch_async()` is called to collect everything in a
 background thread. Subsequent callback calls hit the in-memory cache

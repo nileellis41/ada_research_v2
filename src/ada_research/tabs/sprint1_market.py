@@ -1,35 +1,40 @@
 """Sprint 1: Industry Performance (Dash/Plotly UI).
 
-Industry-first market performance tab. Uses every market-performance
-endpoint FMP exposes for industries:
+Industry-first market performance tab. Uses FMP market-performance endpoints
+split across two user-triggered fetches to minimise API calls:
 
-  /industry-performance-snapshot      (today's avg change, all industries)
-  /historical-industry-performance    (daily series for one industry)
-  /industry-pe-snapshot               (today's P/E, all industries)
-  /historical-industry-pe             (P/E time series for one industry)
-  /sector-performance-snapshot        (parent-sector context)
+  Fetch A — "Refresh" button (also auto-fires on page load)
+    /historical-industry-performance   (daily series for chosen industry)
+    /historical-industry-pe            (P/E time series for chosen industry)
+    Today's change is read from the most-recent row of the history.
+
+  Fetch B — "Load Market Snapshot" button (manual, on demand)
+    /industry-performance-snapshot     (today's avg change, all industries)
+    /industry-pe-snapshot              (today's P/E, all industries)
 
 Layout
 ------
 Top  — Toolbar
-  • Industry dropdown (populated from today's snapshot)
+  • Industry dropdown
   • Lookback dropdown (30 / 60 / 90 / 180 / 365 days)
-  • Refresh button
+  • Refresh button          → updates stat cards + twin charts (Fetch A)
+  • Load Market Snapshot    → updates scatter + leaders/laggards (Fetch B)
 
 Mid  — Stat cards
-  • Today % change            (from industry snapshot)
-  • Period avg daily change   (from historical series)
+  • Today % change            (most-recent history row)
+  • Period avg daily change   (mean of history)
   • Period total return       (compounded)
-  • Current industry P/E      (from PE snapshot)
-  • Period P/E change         (from historical PE)
+  • Current industry P/E      (most-recent P/E history row)
+  • Period P/E change         (first vs last P/E)
 
 Mid  — Charts (side by side)
   • Daily % change for the chosen industry over the lookback
   • P/E for the chosen industry over the lookback
 
-Bottom — Two leaderboards
-  • Today's top-10 / bottom-10 industries (mini bar charts)
-  • Full sortable industry table for the day
+Bottom — Market Snapshot (populated on demand)
+  • Industry P/E & Return Snapshot  (scatter, all industries)
+  • Today's Industry Leaders & Laggards (bar charts, all industries)
+  • Full sortable industry table
 
 Requires FMP_API_KEY.
 """
@@ -69,8 +74,6 @@ _PERIOD_OPTIONS = [
     {"label": "365 days", "value": 365},
 ]
 
-# Fallback list — used only if the live snapshot fails so the dropdown
-# isn't completely empty. Real list comes from FMP at runtime.
 _FALLBACK_INDUSTRIES = [
     "Semiconductors", "Software - Application", "Software - Infrastructure",
     "Banks - Diversified", "Banks - Regional", "Insurance - Diversified",
@@ -247,14 +250,18 @@ def layout() -> html.Div:
          "color": COLORS["bad"], "fontWeight": "600"},
     ]
 
+    _snapshot_prompt = (
+        "Click 'Load Market Snapshot' in the toolbar to populate this section."
+    )
+
     return html.Div([
-        # Auto-fire fetch on first render
+        # Auto-fire fetch on first render (industry data only)
         dcc.Interval(id="sp1-init", interval=400, max_intervals=1),
 
         section_header(
             "Sprint 1 — Industry Performance",
-            "Drill into any of FMP's ~150 industries: today's read, period trend, "
-            "and valuation context.",
+            "Select an industry and use Refresh to load its trend. "
+            "Use 'Load Market Snapshot' to compare all ~150 industries.",
         ),
 
         # ── Toolbar ──────────────────────────────────────────────────────
@@ -288,6 +295,7 @@ def layout() -> html.Div:
                        "fontSize": "13px"},
             ),
             btn("Refresh", "sp1-refresh-btn", primary=True),
+            btn("Load Market Snapshot", "sp1-snapshot-btn", primary=False),
         ], className="toolbar-row"),
 
         # ── Stat cards ───────────────────────────────────────────────────
@@ -337,24 +345,26 @@ def layout() -> html.Div:
         ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap",
                   "marginBottom": "16px"}),
 
-        # ── Industry P/E & Return Snapshot ──────────────────────────────
+        status_label("sp1-status"),
+
+        # ── Industry P/E & Return Snapshot (on demand) ───────────────────
         subsection_title("Industry P/E & Return Snapshot"),
         dcc.Loading(type="circle", color=COLORS["accent"],
                     children=dcc.Graph(
                         id="sp1-pe-return-scatter",
-                        figure=_empty_fig(height=400),
+                        figure=_empty_fig(height=400, msg=_snapshot_prompt),
                         config={"displayModeBar": False},
                     )),
         html.Div(style={"marginBottom": "16px"}),
 
-        # ── Leaders / laggards (today, all industries) ───────────────────
+        # ── Leaders / laggards (on demand) ───────────────────────────────
         subsection_title("Today's Industry Leaders & Laggards"),
         html.Div([
             html.Div(
                 dcc.Loading(type="circle", color=COLORS["accent"],
                             children=dcc.Graph(
                                 id="sp1-leaders-chart",
-                                figure=_empty_fig(height=320),
+                                figure=_empty_fig(height=320, msg=_snapshot_prompt),
                                 config={"displayModeBar": False},
                             )),
                 style={"flex": "1", "minWidth": "320px"},
@@ -363,7 +373,7 @@ def layout() -> html.Div:
                 dcc.Loading(type="circle", color=COLORS["accent"],
                             children=dcc.Graph(
                                 id="sp1-laggards-chart",
-                                figure=_empty_fig(height=320),
+                                figure=_empty_fig(height=320, msg=_snapshot_prompt),
                                 config={"displayModeBar": False},
                             )),
                 style={"flex": "1", "minWidth": "320px"},
@@ -390,7 +400,7 @@ def layout() -> html.Div:
             ),
         ]),
 
-        status_label("sp1-status"),
+        status_label("sp1-snapshot-status"),
 
     ], className="tab-content")
 
@@ -403,30 +413,29 @@ def register_callbacks(app: dash.Dash) -> None:
     if not config.has_fmp_key():
         return
 
+    # ── Callback A: specific industry data (Fetch A) ─────────────────────
+    # 2 API calls: historical_industry + historical_industry_pe
+    # Triggered by: page load interval, Refresh button
     @app.callback(
-        Output("sp1-stat-today",      "children"),
-        Output("sp1-stat-today",      "style"),
-        Output("sp1-stat-avg",        "children"),
-        Output("sp1-stat-avg",        "style"),
-        Output("sp1-stat-total",      "children"),
-        Output("sp1-stat-total",      "style"),
-        Output("sp1-stat-pe",         "children"),
-        Output("sp1-stat-pe-chg",     "children"),
-        Output("sp1-stat-pe-chg",     "style"),
-        Output("sp1-perf-chart",      "figure"),
-        Output("sp1-pe-chart",        "figure"),
-        Output("sp1-pe-return-scatter", "figure"),
-        Output("sp1-leaders-chart",   "figure"),
-        Output("sp1-laggards-chart",  "figure"),
-        Output("sp1-all-table",       "data"),
-        Output("sp1-status",          "children"),
-        Input("sp1-init",         "n_intervals"),
-        Input("sp1-refresh-btn",  "n_clicks"),
-        State("sp1-industry",     "value"),
-        State("sp1-period",       "value"),
+        Output("sp1-stat-today",   "children"),
+        Output("sp1-stat-today",   "style"),
+        Output("sp1-stat-avg",     "children"),
+        Output("sp1-stat-avg",     "style"),
+        Output("sp1-stat-total",   "children"),
+        Output("sp1-stat-total",   "style"),
+        Output("sp1-stat-pe",      "children"),
+        Output("sp1-stat-pe-chg",  "children"),
+        Output("sp1-stat-pe-chg",  "style"),
+        Output("sp1-perf-chart",   "figure"),
+        Output("sp1-pe-chart",     "figure"),
+        Output("sp1-status",       "children"),
+        Input("sp1-init",          "n_intervals"),
+        Input("sp1-refresh-btn",   "n_clicks"),
+        State("sp1-industry",      "value"),
+        State("sp1-period",        "value"),
         prevent_initial_call=False,
     )
-    def fetch(_n_init, _n_click, industry, period):
+    def fetch_industry(_n_init, _n_click, industry, period):
         from ada_research.core.fmp_client import FmpClient
 
         if not industry:
@@ -435,67 +444,61 @@ def register_callbacks(app: dash.Dash) -> None:
         days = int(period or 90)
         try:
             c = FmpClient()
-            ind_snap   = c.industry_snapshot()
-            ind_pe     = c.industry_pe()
-            hist_perf  = c.historical_industry(industry, days=days)
-            hist_pe    = c.historical_industry_pe(industry, days=days)
+            hist_perf = c.historical_industry(industry, days=days)
+            hist_pe   = c.historical_industry_pe(industry, days=days)
         except Exception as exc:
             log.exception("FMP industry fetch failed")
-            return _err_tuple(f"Error: {exc}")
+            return _err_industry(f"Error: {exc}")
 
-        # ── Today's value for the chosen industry ────────────────────────
-        today_val = _industry_today(ind_snap, industry)
-        today_str = _fmt_pct(today_val)
-        today_sty = _tone_for_change(today_val)
-
-        # ── Period avg + total return (compounded) ───────────────────────
-        avg_str, avg_sty, tot_str, tot_sty = "—", {}, "—", {}
+        # ── Today's value: most-recent row of the history ────────────────
+        today_val = None
         perf_fig = _empty_fig(msg="No history for this industry")
+        avg_str, avg_sty, tot_str, tot_sty = "—", {}, "—", {}
+
         if not hist_perf.empty and "averageChange" in hist_perf.columns:
             hp = hist_perf.copy()
             hp["averageChange"] = _coerce_num(hp["averageChange"])
-            hp = hp.dropna(subset=["averageChange"])
+            hp["date"] = pd.to_datetime(hp["date"])
+            hp = hp.sort_values("date").dropna(subset=["averageChange"])
             if not hp.empty:
-                avg_val = hp["averageChange"].mean()
-                # Compound: prod(1 + r/100) - 1
-                tot_val = ((1 + hp["averageChange"] / 100.0).prod() - 1) * 100.0
+                today_val = hp["averageChange"].iloc[-1]
+                avg_val   = hp["averageChange"].mean()
+                tot_val   = ((1 + hp["averageChange"] / 100.0).prod() - 1) * 100.0
                 avg_str, avg_sty = _fmt_pct(avg_val), _tone_for_change(avg_val)
                 tot_str, tot_sty = _fmt_pct(tot_val), _tone_for_change(tot_val)
                 perf_fig = _line_fig(hp, "averageChange",
                                      f"{industry} — Daily % Change ({days}d)",
                                      COLORS["accent"], fmt="pct")
 
-        # ── Industry P/E (current + period change) ───────────────────────
-        pe_curr = _industry_today(ind_pe, industry, val_col="pe")
-        pe_str  = _fmt_num(pe_curr, decimals=2) + "x" if pe_curr is not None and pe_curr == pe_curr else "—"
+        today_str = _fmt_pct(today_val)
+        today_sty = _tone_for_change(today_val)
 
+        # ── Industry P/E ─────────────────────────────────────────────────
+        pe_str = "—"
         pe_chg_str, pe_chg_sty = "—", {}
         pe_fig = _empty_fig(msg="No P/E history")
+
         if not hist_pe.empty and "pe" in hist_pe.columns:
             ph = hist_pe.copy()
             ph["pe"] = _coerce_num(ph["pe"])
-            ph = ph.dropna(subset=["pe"])
-            if len(ph) >= 2:
-                ph_sorted = ph.sort_values("date")
-                first_pe = ph_sorted["pe"].iloc[0]
-                last_pe  = ph_sorted["pe"].iloc[-1]
-                if first_pe and first_pe == first_pe and first_pe != 0:
-                    chg_val = (last_pe - first_pe) / first_pe * 100.0
-                    pe_chg_str = _fmt_pct(chg_val)
-                    pe_chg_sty = _tone_for_change(chg_val)
-                pe_fig = _line_fig(ph_sorted, "pe",
+            ph["date"] = pd.to_datetime(ph["date"])
+            ph = ph.sort_values("date").dropna(subset=["pe"])
+            if not ph.empty:
+                pe_curr = ph["pe"].iloc[-1]
+                pe_str  = (_fmt_num(pe_curr, decimals=2) + "x"
+                           if pe_curr == pe_curr else "—")
+                if len(ph) >= 2:
+                    first_pe = ph["pe"].iloc[0]
+                    if first_pe and first_pe == first_pe and first_pe != 0:
+                        chg_val    = (pe_curr - first_pe) / first_pe * 100.0
+                        pe_chg_str = _fmt_pct(chg_val)
+                        pe_chg_sty = _tone_for_change(chg_val)
+                pe_fig = _line_fig(ph, "pe",
                                    f"{industry} — P/E ({days}d)",
                                    COLORS["warn"], fmt="num")
 
-        # ── P/E vs Return scatter (all industries today) ────────────────
-        pe_return_fig = _build_pe_return_scatter(ind_snap, ind_pe)
-
-        # ── Leaders / laggards (today, all industries) ───────────────────
-        leaders_fig, laggards_fig, all_rows = _build_leaderboards(ind_snap)
-
-        n_total = len(all_rows)
-        status = (f"{industry}: {today_str} today · {n_total} industries "
-                  f"in snapshot · {days}d lookback.")
+        status = (f"{industry}: {today_str} today · {days}d lookback · "
+                  "click 'Load Market Snapshot' to see all industries.")
 
         return (
             today_str, today_sty,
@@ -504,34 +507,48 @@ def register_callbacks(app: dash.Dash) -> None:
             pe_str,
             pe_chg_str, pe_chg_sty,
             perf_fig, pe_fig,
-            pe_return_fig,
-            leaders_fig, laggards_fig,
-            all_rows,
             status,
         )
+
+    # ── Callback B: market-wide snapshot (Fetch B) ────────────────────────
+    # 2 API calls: industry_snapshot + industry_pe
+    # Triggered by: "Load Market Snapshot" button only
+    @app.callback(
+        Output("sp1-pe-return-scatter", "figure"),
+        Output("sp1-leaders-chart",     "figure"),
+        Output("sp1-laggards-chart",    "figure"),
+        Output("sp1-all-table",         "data"),
+        Output("sp1-snapshot-status",   "children"),
+        Input("sp1-snapshot-btn",       "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def fetch_market_snapshot(n_clicks):
+        from ada_research.core.fmp_client import FmpClient
+
+        if not n_clicks:
+            raise PreventUpdate
+
+        try:
+            c = FmpClient()
+            ind_snap = c.industry_snapshot()
+            ind_pe   = c.industry_pe()
+        except Exception as exc:
+            log.exception("FMP snapshot fetch failed")
+            empty = _empty_fig()
+            return empty, empty, empty, [], f"Error: {exc}"
+
+        pe_return_fig              = _build_pe_return_scatter(ind_snap, ind_pe)
+        leaders_fig, laggards_fig, all_rows = _build_leaderboards(ind_snap)
+
+        n_total = len(all_rows)
+        status  = f"Market snapshot loaded · {n_total} industries."
+
+        return pe_return_fig, leaders_fig, laggards_fig, all_rows, status
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _industry_today(snap_df: pd.DataFrame, industry: str,
-                    name_col: str = "industry", val_col: str = "averageChange") -> Any:
-    """Pull today's value for one industry from a snapshot DataFrame."""
-    if snap_df is None or snap_df.empty or name_col not in snap_df.columns:
-        return None
-    matches = snap_df[snap_df[name_col].astype(str).str.lower() == industry.lower()]
-    if matches.empty or val_col not in matches.columns:
-        return None
-    val = matches.iloc[0][val_col]
-    try:
-        f = float(val)
-        if f != f:  # NaN
-            return None
-        return f
-    except (TypeError, ValueError):
-        return None
-
 
 def _build_pe_return_scatter(snap: pd.DataFrame, pe_df: pd.DataFrame) -> go.Figure:
     """Scatter: x=today % change, y=P/E, one bubble per industry."""
@@ -597,7 +614,7 @@ def _build_leaderboards(snap: pd.DataFrame) -> tuple[go.Figure, go.Figure, list[
         empty = _empty_fig(height=320, msg="No snapshot data")
         return empty, empty, []
 
-    top10 = df.head(10).iloc[::-1]    # reverse so largest renders at top
+    top10 = df.head(10).iloc[::-1]
     bot10 = df.tail(10)
 
     leaders = _hbar(
@@ -619,16 +636,13 @@ def _build_leaderboards(snap: pd.DataFrame) -> tuple[go.Figure, go.Figure, list[
     return leaders, laggards, all_rows
 
 
-def _err_tuple(msg: str) -> tuple:
-    """Match the 16-element callback signature on error paths."""
+def _err_industry(msg: str) -> tuple:
+    """Match the 12-element Callback A signature on error paths."""
     empty = _empty_fig()
     return (
-        "—", {}, "—", {}, "—", {},        # today / avg / total
-        "—",                                # pe
-        "—", {},                            # pe change
-        empty, empty,                       # perf + pe charts
-        empty,                              # pe-return scatter
-        empty, empty,                       # leaders + laggards
-        [],                                 # table
+        "—", {}, "—", {}, "—", {},   # today / avg / total
+        "—",                           # pe
+        "—", {},                       # pe change
+        empty, empty,                  # perf + pe charts
         msg,
     )

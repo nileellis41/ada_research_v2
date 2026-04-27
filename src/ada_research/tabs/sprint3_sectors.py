@@ -1,4 +1,4 @@
-"""Sprint 2: Stock vs Sector (Dash/Plotly UI).
+﻿"""Sprint 3: Stock vs Sector (Dash/Plotly UI).
 
 Compare a single stock's behaviour to the sector it belongs to. The user
 types a ticker, the tab auto-detects the parent sector via the FMP profile
@@ -274,7 +274,7 @@ def layout() -> html.Div:
     if not config.has_fmp_key():
         return html.Div(
             placeholder_panel(
-                "Sprint 2 — Stock vs Sector",
+                "Sprint 3 — Stock vs Sector",
                 "FMP_API_KEY not set. Get a free key at "
                 "site.financialmodelingprep.com and add it to .env, "
                 "then restart the server.",
@@ -288,7 +288,7 @@ def layout() -> html.Div:
 
     return html.Div([
         section_header(
-            "Sprint 2 — Stock vs Sector",
+            "Sprint 3 — Stock vs Sector",
             "Type a ticker; we'll resolve its sector automatically and compare "
             "performance, valuation, and volatility.",
         ),
@@ -297,11 +297,11 @@ def layout() -> html.Div:
         html.Div([
             html.Label("Ticker:", style={"color": COLORS["text_dim"],
                                           "fontSize": "12px", "whiteSpace": "nowrap"}),
-            text_input("sp2-ticker", value="AAPL", width="120px"),
+            text_input("sp3-ticker", value="AAPL", width="120px"),
             html.Label("Sector:", style={"color": COLORS["text_dim"],
                                           "fontSize": "12px", "whiteSpace": "nowrap"}),
             dcc.Dropdown(
-                id="sp2-sector",
+                id="sp3-sector",
                 options=sector_opts,
                 value=None,
                 placeholder="Auto-detect after Fetch",
@@ -316,7 +316,7 @@ def layout() -> html.Div:
             html.Label("Lookback:", style={"color": COLORS["text_dim"],
                                             "fontSize": "12px", "whiteSpace": "nowrap"}),
             dcc.Dropdown(
-                id="sp2-period",
+                id="sp3-period",
                 options=_PERIOD_OPTIONS,
                 value=90,
                 clearable=False,
@@ -327,7 +327,7 @@ def layout() -> html.Div:
                        "borderRadius": "4px",
                        "fontSize": "13px"},
             ),
-            btn("Fetch", "sp2-fetch-btn", primary=True),
+            btn("Fetch", "sp3-fetch-btn", primary=True),
         ], className="toolbar-row"),
 
         # ── Performance row ──────────────────────────────────────────────
@@ -335,15 +335,15 @@ def layout() -> html.Div:
         html.Div([
             html.Div([
                 html.Div("Stock today",  className="stat-label"),
-                html.Div("—", id="sp2-perf-stock",  className="stat-value"),
+                html.Div("—", id="sp3-perf-stock",  className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Sector today", className="stat-label"),
-                html.Div("—", id="sp2-perf-sector", className="stat-value"),
+                html.Div("—", id="sp3-perf-sector", className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Spread (pp)",  className="stat-label"),
-                html.Div("—", id="sp2-perf-spread", className="stat-value"),
+                html.Div("—", id="sp3-perf-spread", className="stat-value"),
             ], className="stat-card"),
         ], className="stats-row"),
 
@@ -352,15 +352,15 @@ def layout() -> html.Div:
         html.Div([
             html.Div([
                 html.Div("Stock P/E",     className="stat-label"),
-                html.Div("—", id="sp2-pe-stock",  className="stat-value"),
+                html.Div("—", id="sp3-pe-stock",  className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Sector P/E",    className="stat-label"),
-                html.Div("—", id="sp2-pe-sector", className="stat-value"),
+                html.Div("—", id="sp3-pe-sector", className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Premium/Discount", className="stat-label"),
-                html.Div("—", id="sp2-pe-prem",  className="stat-value"),
+                html.Div("—", id="sp3-pe-prem",  className="stat-value"),
             ], className="stat-card"),
         ], className="stats-row"),
 
@@ -369,28 +369,28 @@ def layout() -> html.Div:
         html.Div([
             html.Div([
                 html.Div("Stock vol (ann.)", className="stat-label"),
-                html.Div("—", id="sp2-vol-stock", className="stat-value"),
+                html.Div("—", id="sp3-vol-stock", className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Sector vol (ann.)", className="stat-label"),
-                html.Div("—", id="sp2-vol-sector", className="stat-value"),
+                html.Div("—", id="sp3-vol-sector", className="stat-value"),
             ], className="stat-card"),
             html.Div([
                 html.Div("Vol ratio", className="stat-label"),
-                html.Div("—", id="sp2-vol-ratio",  className="stat-value"),
+                html.Div("—", id="sp3-vol-ratio",  className="stat-value"),
             ], className="stat-card"),
         ], className="stats-row"),
 
         # ── Cumulative + relative strength ───────────────────────────────
         dcc.Loading(type="circle", color=COLORS["accent"],
                     children=dcc.Graph(
-                        id="sp2-cum-chart",
+                        id="sp3-cum-chart",
                         figure=_empty_fig(height=320),
                         config={"displayModeBar": False},
                     )),
         dcc.Loading(type="circle", color=COLORS["accent"],
                     children=dcc.Graph(
-                        id="sp2-rs-chart",
+                        id="sp3-rs-chart",
                         figure=_empty_fig(height=260),
                         config={"displayModeBar": False},
                     )),
@@ -398,7 +398,7 @@ def layout() -> html.Div:
         # ── Valuation chart ──────────────────────────────────────────────
         dcc.Loading(type="circle", color=COLORS["accent"],
                     children=dcc.Graph(
-                        id="sp2-pe-chart",
+                        id="sp3-pe-chart",
                         figure=_empty_fig(height=260),
                         config={"displayModeBar": False},
                     )),
@@ -410,7 +410,7 @@ def layout() -> html.Div:
                                 "fontSize": "12px", "marginTop": "12px",
                                 "marginBottom": "6px", "userSelect": "none"}),
             dash_table.DataTable(
-                id="sp2-summary-table",
+                id="sp3-summary-table",
                 columns=[
                     {"name": "Metric", "id": "metric"},
                     {"name": "Stock",  "id": "stock"},
@@ -422,7 +422,7 @@ def layout() -> html.Div:
             ),
         ], style={"marginBottom": "20px"}),
 
-        status_label("sp2-status"),
+        status_label("sp3-status"),
 
     ], className="tab-content")
 
@@ -436,29 +436,29 @@ def register_callbacks(app: dash.Dash) -> None:
         return
 
     @app.callback(
-        Output("sp2-sector",        "value"),     # auto-fill sector
-        Output("sp2-perf-stock",    "children"),
-        Output("sp2-perf-stock",    "style"),
-        Output("sp2-perf-sector",   "children"),
-        Output("sp2-perf-sector",   "style"),
-        Output("sp2-perf-spread",   "children"),
-        Output("sp2-perf-spread",   "style"),
-        Output("sp2-pe-stock",      "children"),
-        Output("sp2-pe-sector",     "children"),
-        Output("sp2-pe-prem",       "children"),
-        Output("sp2-pe-prem",       "style"),
-        Output("sp2-vol-stock",     "children"),
-        Output("sp2-vol-sector",    "children"),
-        Output("sp2-vol-ratio",     "children"),
-        Output("sp2-cum-chart",     "figure"),
-        Output("sp2-rs-chart",      "figure"),
-        Output("sp2-pe-chart",      "figure"),
-        Output("sp2-summary-table", "data"),
-        Output("sp2-status",        "children"),
-        Input("sp2-fetch-btn", "n_clicks"),
-        State("sp2-ticker",    "value"),
-        State("sp2-sector",    "value"),
-        State("sp2-period",    "value"),
+        Output("sp3-sector",        "value"),     # auto-fill sector
+        Output("sp3-perf-stock",    "children"),
+        Output("sp3-perf-stock",    "style"),
+        Output("sp3-perf-sector",   "children"),
+        Output("sp3-perf-sector",   "style"),
+        Output("sp3-perf-spread",   "children"),
+        Output("sp3-perf-spread",   "style"),
+        Output("sp3-pe-stock",      "children"),
+        Output("sp3-pe-sector",     "children"),
+        Output("sp3-pe-prem",       "children"),
+        Output("sp3-pe-prem",       "style"),
+        Output("sp3-vol-stock",     "children"),
+        Output("sp3-vol-sector",    "children"),
+        Output("sp3-vol-ratio",     "children"),
+        Output("sp3-cum-chart",     "figure"),
+        Output("sp3-rs-chart",      "figure"),
+        Output("sp3-pe-chart",      "figure"),
+        Output("sp3-summary-table", "data"),
+        Output("sp3-status",        "children"),
+        Input("sp3-fetch-btn", "n_clicks"),
+        State("sp3-ticker",    "value"),
+        State("sp3-sector",    "value"),
+        State("sp3-period",    "value"),
         prevent_initial_call=True,
     )
     def fetch(n_clicks, ticker_val, sector_val, period):

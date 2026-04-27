@@ -1,4 +1,4 @@
-"""Sprint 4: Stock Screener (Dash/Plotly UI).
+﻿"""Sprint 2: Stock Screener (Dash/Plotly UI).
 
 Preset-driven screens. Pick a preset, set a limit, hit Run.
 
@@ -22,7 +22,7 @@ def layout() -> html.Div:
     if not config.has_fmp_key():
         return html.Div(
             placeholder_panel(
-                "Sprint 4 — Stock Screener",
+                "Sprint 2 — Stock Screener",
                 "FMP_API_KEY not set. Get a free key at "
                 "site.financialmodelingprep.com and add it to .env, "
                 "then restart the server.",
@@ -40,14 +40,14 @@ def layout() -> html.Div:
     ts = TABLE_STYLES()
 
     return html.Div([
-        section_header("Sprint 4 — Stock Screener"),
+        section_header("Sprint 2 — Stock Screener"),
 
         # ── Toolbar ──────────────────────────────────────────────────────
         html.Div([
             html.Label("Preset:", style={"color": COLORS["text_dim"],
                                           "fontSize": "12px", "whiteSpace": "nowrap"}),
             dcc.Dropdown(
-                id="sp4-preset",
+                id="sp2-preset",
                 options=preset_options,
                 value=preset_options[0]["value"] if preset_options else None,
                 clearable=False,
@@ -63,7 +63,7 @@ def layout() -> html.Div:
             html.Label("Limit:", style={"color": COLORS["text_dim"],
                                          "fontSize": "12px", "whiteSpace": "nowrap"}),
             dcc.Input(
-                id="sp4-limit",
+                id="sp2-limit",
                 type="number",
                 value=30,
                 min=5,
@@ -72,14 +72,14 @@ def layout() -> html.Div:
                 className="ada-input",
                 style={"width": "70px"},
             ),
-            btn("Run Screen", "sp4-run-btn", primary=True),
+            btn("Run Screen", "sp2-run-btn", primary=True),
         ], className="toolbar-row"),
 
         # ── Results table ─────────────────────────────────────────────────
         dcc.Loading(
             type="circle", color=COLORS["accent"],
             children=dash_table.DataTable(
-                id="sp4-table",
+                id="sp2-table",
                 columns=[
                     {"name": "Symbol",     "id": "symbol"},
                     {"name": "Name",       "id": "name"},
@@ -95,7 +95,7 @@ def layout() -> html.Div:
             ),
         ),
 
-        status_label("sp4-status"),
+        status_label("sp2-status"),
 
     ], className="tab-content")
 
@@ -109,11 +109,11 @@ def register_callbacks(app: dash.Dash) -> None:
         return
 
     @app.callback(
-        Output("sp4-table",  "data"),
-        Output("sp4-status", "children"),
-        Input("sp4-run-btn", "n_clicks"),
-        State("sp4-preset",  "value"),
-        State("sp4-limit",   "value"),
+        Output("sp2-table",  "data"),
+        Output("sp2-status", "children"),
+        Input("sp2-run-btn", "n_clicks"),
+        State("sp2-preset",  "value"),
+        State("sp2-limit",   "value"),
         prevent_initial_call=True,
     )
     def run_screen(n_clicks, preset_name, limit):

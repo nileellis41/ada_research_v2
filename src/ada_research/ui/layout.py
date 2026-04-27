@@ -1,4 +1,4 @@
-"""Main Dash layout: header + six-tab workbench."""
+﻿"""Main Dash layout: header + six-tab workbench."""
 from __future__ import annotations
 
 from dash import dcc, html
@@ -11,9 +11,9 @@ def create_layout() -> html.Div:
         stage1_sentiment,
         stage2_macro,
         sprint1_market,
-        sprint2_sectors,
-        sprint3_analysts,
-        sprint4_screener,
+        sprint3_sectors,
+        sprint4_analysts,
+        sprint2_screener,
     )
 
     _TAB_STYLE = {
@@ -63,23 +63,23 @@ def create_layout() -> html.Div:
                     **_TAB_STYLE,
                 ),
                 dcc.Tab(
-                    label="Sprint 2 · Sectors",
+                    label="Sprint 2 · Screener",
                     value="tab-sp2",
-                    children=[sprint2_sectors.layout()],
+                    children=[sprint2_screener.layout()],
                     **_TAB_STYLE,
                 ),
                 dcc.Tab(
-                    label="Sprint 3 · Sectors",
+                    label="Sprint 3 · Stock vs Sector",
                     value="tab-sp3",
-                    children=[sprint3_analysts.layout()],
+                    children=[sprint3_sectors.layout()],
                     **_TAB_STYLE,
                 ),
                 dcc.Tab(
-                    label="Sprint 4 · Screener",
+                    label="Sprint 4 · Analysts Analysis",
                     value="tab-sp4",
-                    children=[sprint4_screener.layout()],
+                    children=[sprint4_analysts.layout()],
                     **_TAB_STYLE,
                 ),
-            ],
+          ],
         ),
     ], style={"backgroundColor": COLORS["bg"], "minHeight": "100vh"})

@@ -1,10 +1,10 @@
-"""FMP (Financial Modeling Prep) client — lifted from the sprint notebooks.
+﻿"""FMP (Financial Modeling Prep) client — lifted from the sprint notebooks.
 
 Consolidates the four sprints into one client:
   Sprint 1 — quotes, historical prices
-  Sprint 2 — sectors, industries, movers
-  Sprint 3 — analyst estimates, ratings, grades
-  Sprint 4 — stock screener with named presets
+  Sprint 3 — sectors, industries, movers
+  Sprint 4 — analyst estimates, ratings, grades
+  Sprint 2 — stock screener with named presets
 
 All endpoints use FMP's `/stable/` API base. The legacy `/api/v3/` endpoints
 were retired August 2025.
@@ -93,7 +93,7 @@ class FmpClient:
             df = df.tail(periods).reset_index(drop=True)
         return df
 
-    # ---- Sprint 2: sectors, industries, movers -----------------------------
+    # ---- Sprint 3: sectors, industries, movers -----------------------------
 
     @staticmethod
     def _latest_business_day() -> str:
@@ -159,7 +159,7 @@ class FmpClient:
     def most_actives(self) -> pd.DataFrame:
         return pd.DataFrame(self.safe("/most-actives") or [])
 
-    # ---- Sprint 3: analyst features ----------------------------------------
+    # ---- Sprint 4: analyst features ----------------------------------------
 
     def analyst_estimates(
         self,
@@ -192,7 +192,7 @@ class FmpClient:
     def grades_latest_news(self, limit: int = 30) -> pd.DataFrame:
         return pd.DataFrame(self.safe("/grades-latest-news", page=0, limit=limit) or [])
 
-    # ---- Sprint 4: screener ------------------------------------------------
+    # ---- Sprint 2: screener ------------------------------------------------
 
     def screen(
         self,
@@ -236,7 +236,7 @@ class FmpClient:
         return pd.DataFrame(self.safe("/company-screener", **params) or [])
 
 
-# ---- Screener presets (Sprint 4) ----------------------------------------------
+# ---- Screener presets (Sprint 2) ----------------------------------------------
 
 def screen_large_cap_stable(client: FmpClient, limit: int = 30) -> pd.DataFrame:
     return client.screen(market_cap_min=50_000_000_000, beta_max=1.0, limit=limit)
