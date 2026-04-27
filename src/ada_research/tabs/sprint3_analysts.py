@@ -1,173 +1,177 @@
-"""Sprint 3: Sector & Industry Analysis (Dash/Plotly UI).
+"""Sprint 3: Analyst Features (Dash/Plotly UI).
+
+What Wall Street thinks about a single ticker — price targets, B/H/S
+distribution, recent rating actions — plus a market-wide upgrades /
+downgrades feed.
+
+Mirrors the nine endpoints from `re/sprint3_analyst_features.ipynb`. All
+calls go through `FmpClient.safe(...)` so endpoints that are gated to a
+paid plan (notably `/price-target-news`) just degrade silently rather
+than crash the tab.
 
 Layout
 ------
-Top — Overview (auto-loads on page open, Refresh button)
-  • Sector Performance bar chart  (left)
-  • Sector P/E bar chart          (right)
-  • Gainers / Losers / Most Active tables (3-column row)
+Top — Toolbar
+  • Ticker input + Fetch button
 
-Bottom — Sector Deep Dive (user-driven)
-  • Pick a primary sector + up to 3 comparison sectors + lookback period
-  • Multi-sector historical performance line chart
-  • Historical P/E line chart for the primary sector
-  • Industry performance today: bar chart + sortable table
+Per-ticker section (driven by Fetch)
+  • Price target stat cards: consensus / median / high / low + implied % vs spot
+  • Recommendation distribution: stat cards + horizontal bar chart
+  • Recent rating actions table (per-symbol grades feed)
+  • Forward analyst estimates table (revenue / EPS forward years)
+
+Market section (auto-loads on tab open, independent of the ticker)
+  • Latest grade actions across the whole market — "what moved overnight"
 
 Requires FMP_API_KEY.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import dash
+import pandas as pd
 import plotly.graph_objects as go
 from dash import Input, Output, State, dash_table, dcc, html
 from dash.exceptions import PreventUpdate
 
-from ada_research.ui.components import btn, placeholder_panel, section_header, status_label
+from ada_research.ui.components import (
+    btn,
+    placeholder_panel,
+    section_header,
+    status_label,
+    subsection_title,
+    text_input,
+)
 from ada_research.ui.theme import COLORS, TABLE_STYLES
 from ada_research.utils.config import config
 from ada_research.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# FMP sector names as returned by the /sector-performance-snapshot endpoint
-_SECTORS = [
-    "Basic Materials",
-    "Communication Services",
-    "Consumer Cyclical",
-    "Consumer Defensive",
-    "Energy",
-    "Financial Services",
-    "Healthcare",
-    "Industrials",
-    "Real Estate",
-    "Technology",
-    "Utilities",
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Order matters — strong-buy on the left, strong-sell on the right.
+_BHS_KEYS: list[tuple[str, str, str]] = [
+    # (FMP key,        display label,  bar color)
+    ("strongBuy",      "Strong Buy",   COLORS["good"]),
+    ("buy",            "Buy",          "#2ecc71"),
+    ("hold",           "Hold",         COLORS["warn"]),
+    ("sell",           "Sell",         "#e74c3c"),
+    ("strongSell",     "Strong Sell",  COLORS["bad"]),
 ]
 
-# Colour palette for comparison lines (primary always uses accent)
-_COMPARE_COLORS = [
-    "#e57373", "#ffb74d", "#4caf50", "#ce93d8",
-    "#80cbc4", "#f06292", "#aed581", "#ff8a65",
-    "#90a4ae", "#fff176",
+# Forward-estimate columns we surface (best-effort — names vary across FMP versions).
+_ESTIMATE_DISPLAY_COLS: list[tuple[str, str]] = [
+    ("date",                       "Period"),
+    ("estimatedRevenueAvg",        "Rev Avg"),
+    ("estimatedRevenueLow",        "Rev Low"),
+    ("estimatedRevenueHigh",       "Rev High"),
+    ("estimatedEpsAvg",            "EPS Avg"),
+    ("estimatedEpsLow",            "EPS Low"),
+    ("estimatedEpsHigh",           "EPS High"),
+    ("numberAnalystsEstimatedEps", "# Analysts"),
 ]
-
-_PERIOD_OPTIONS = [
-    {"label": "30 days",  "value": 30},
-    {"label": "60 days",  "value": 60},
-    {"label": "90 days",  "value": 90},
-    {"label": "180 days", "value": 180},
-]
-
-_SUB_TAB = {"className": "sub-tab", "selected_className": "sub-tab--selected"}
 
 
 # ---------------------------------------------------------------------------
 # Chart helpers
 # ---------------------------------------------------------------------------
 
-def _dark(fig: go.Figure, height: int = 320) -> go.Figure:
-    fig.update_layout(
-        paper_bgcolor=COLORS["bg"],
-        plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["text"], "family": "Segoe UI, Inter, sans-serif", "size": 12},
-        margin={"l": 170, "r": 50, "t": 36, "b": 20},
-        xaxis={"gridcolor": COLORS["border"], "zerolinecolor": COLORS["border"]},
-        yaxis={"gridcolor": "transparent"},
-        height=height,
-    )
-    return fig
-
-
-def _dark_line(fig: go.Figure, height: int = 320) -> go.Figure:
-    fig.update_layout(
-        paper_bgcolor=COLORS["bg"],
-        plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["text"], "family": "Segoe UI, Inter, sans-serif", "size": 12},
-        margin={"l": 60, "r": 20, "t": 40, "b": 40},
-        xaxis={"gridcolor": COLORS["border"], "zerolinecolor": COLORS["border"],
-               "linecolor": COLORS["border"]},
-        yaxis={"gridcolor": COLORS["border"], "zerolinecolor": COLORS["border"],
-               "linecolor": COLORS["border"]},
-        legend={"bgcolor": COLORS["panel"], "bordercolor": COLORS["border"],
-                "font": {"color": COLORS["text"]}, "orientation": "h",
-                "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0},
-        hovermode="x unified",
-        height=height,
-    )
-    return fig
-
-
-def _empty_fig(height: int = 320) -> go.Figure:
+def _empty_fig(height: int = 240, msg: str = "No data") -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
-        paper_bgcolor=COLORS["bg"], plot_bgcolor=COLORS["panel"],
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
         font={"color": COLORS["text_dim"]},
-        margin={"l": 20, "r": 20, "t": 30, "b": 20},
+        margin={"l": 20, "r": 20, "t": 20, "b": 20},
         height=height,
-        annotations=[{"text": "No data", "xref": "paper", "yref": "paper",
-                      "x": 0.5, "y": 0.5, "showarrow": False,
-                      "font": {"color": COLORS["text_dim"], "size": 14}}],
+        annotations=[{
+            "text": msg, "xref": "paper", "yref": "paper",
+            "x": 0.5, "y": 0.5, "showarrow": False,
+            "font": {"color": COLORS["text_dim"], "size": 13},
+        }],
     )
     return fig
 
 
-def _bar_chart(names: list, values: list, title: str,
-               color_by_sign: bool = True, fmt_pct: bool = True) -> go.Figure:
-    if not names:
-        return _empty_fig()
-    colors = (
-        [COLORS["good"] if v >= 0 else COLORS["bad"] for v in values]
-        if color_by_sign
-        else [COLORS["accent"]] * len(values)
-    )
-    text = [f"{v:+.2f}%" if fmt_pct else f"{v:.1f}x" for v in values]
+def _bhs_chart(counts: dict[str, int], ticker: str) -> go.Figure:
+    """Vertical bar chart of strong-buy → strong-sell distribution."""
+    if not counts or sum(counts.values()) == 0:
+        return _empty_fig(msg="No analyst ratings available")
+
+    labels = [lbl  for k, lbl, _   in _BHS_KEYS if k in counts]
+    values = [counts.get(k, 0) for k, _, _ in _BHS_KEYS if k in counts]
+    colors = [c    for k, _,   c   in _BHS_KEYS if k in counts]
+
     fig = go.Figure(go.Bar(
-        x=values, y=names, orientation="h",
+        x=labels, y=values,
         marker_color=colors,
-        text=text, textposition="outside",
-        textfont={"color": COLORS["text"], "size": 11},
-        hovertemplate="%{y}: %{x}<extra></extra>",
+        text=values, textposition="outside",
+        textfont={"color": COLORS["text"], "size": 12},
+        hovertemplate="%{x}: %{y} analysts<extra></extra>",
     ))
     fig.update_layout(
-        title={"text": title, "font": {"size": 13, "color": COLORS["text"]}},
+        title={"text": f"{ticker} — Recommendation Distribution",
+               "font": {"size": 13, "color": COLORS["text"]}},
+        paper_bgcolor=COLORS["bg"],
+        plot_bgcolor=COLORS["panel"],
+        font={"color": COLORS["text"], "family": "Segoe UI, Inter, sans-serif", "size": 12},
+        margin={"l": 40, "r": 20, "t": 40, "b": 40},
+        xaxis={"gridcolor": "transparent", "linecolor": COLORS["border"]},
+        yaxis={"gridcolor": COLORS["border"], "linecolor": COLORS["border"],
+               "title": "# Analysts"},
+        height=260,
+        showlegend=False,
     )
-    height = max(280, len(names) * 30 + 80)
-    return _dark(fig, height=height)
+    return fig
 
 
 # ---------------------------------------------------------------------------
-# Table style helpers
+# Formatting helpers
 # ---------------------------------------------------------------------------
 
-def _mover_ts(change_color: str | None = None):
-    ts = TABLE_STYLES()
-    base = ts.pop("style_data_conditional", [])
-    extra = []
-    if change_color:
-        extra = [{"if": {"column_id": "pct_change"}, "color": change_color,
-                  "fontWeight": "600"}]
-    else:
-        extra = [
-            {"if": {"filter_query": "{pct_change} contains '+'", "column_id": "pct_change"},
-             "color": COLORS["good"], "fontWeight": "600"},
-            {"if": {"filter_query": "{pct_change} contains '-'", "column_id": "pct_change"},
-             "color": COLORS["bad"], "fontWeight": "600"},
-        ]
-    ts["style_data_conditional"] = base + extra
-    return ts
+def _fmt_money(v: Any, big: bool = False) -> str:
+    if v is None or (isinstance(v, float) and v != v):  # NaN
+        return "—"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if big:
+        if abs(v) >= 1e12: return f"${v / 1e12:.2f}T"
+        if abs(v) >= 1e9:  return f"${v / 1e9:.2f}B"
+        if abs(v) >= 1e6:  return f"${v / 1e6:.1f}M"
+    return f"${v:,.2f}"
 
 
-_MOVER_COLS = [
-    {"name": "Symbol",   "id": "symbol"},
-    {"name": "Name",     "id": "name"},
-    {"name": "Price",    "id": "price"},
-    {"name": "% Chg",    "id": "pct_change"},
-]
+def _fmt_pct(v: Any) -> str:
+    if v is None or (isinstance(v, float) and v != v):
+        return "—"
+    try:
+        return f"{float(v):+.1f}%"
+    except (TypeError, ValueError):
+        return "—"
 
-_INDUSTRY_COLS = [
-    {"name": "Industry",    "id": "industry"},
-    {"name": "Avg % Chg",   "id": "averageChange"},
-]
+
+def _first_row(df: pd.DataFrame) -> dict[str, Any]:
+    """First row of df as a plain dict, or {} if df is empty."""
+    if df is None or df.empty:
+        return {}
+    return df.iloc[0].to_dict()
+
+
+def _implied_pct(target: Any, current: Any) -> str:
+    try:
+        t = float(target); c = float(current)
+        if c == 0:
+            return ""
+        return f" ({(t - c) / c * 100:+.1f}%)"
+    except (TypeError, ValueError):
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -178,194 +182,165 @@ def layout() -> html.Div:
     if not config.has_fmp_key():
         return html.Div(
             placeholder_panel(
-                "Sprint 3 — Sector Analysis",
+                "Sprint 3 — Analysts",
                 "FMP_API_KEY not set. Get a free key at "
                 "site.financialmodelingprep.com and add it to .env, "
-                "then restart.",
+                "then restart the server.",
             ),
             className="tab-content",
         )
 
-    sector_opts  = [{"label": s, "value": s} for s in _SECTORS]
-    period_opts  = _PERIOD_OPTIONS
+    ts = TABLE_STYLES()
 
-    ind_ts = TABLE_STYLES()
-    base_sdc = ind_ts.pop("style_data_conditional", [])
-    ind_ts["style_data_conditional"] = base_sdc + [
-        {"if": {"filter_query": "{averageChange} contains '+'", "column_id": "averageChange"},
+    # Per-ticker grades table — color the action column by sentiment.
+    grades_ts = TABLE_STYLES()
+    grades_base = grades_ts.pop("style_data_conditional", [])
+    grades_ts["style_data_conditional"] = grades_base + [
+        {"if": {"filter_query": '{action} contains "upgrad"', "column_id": "action"},
          "color": COLORS["good"], "fontWeight": "600"},
-        {"if": {"filter_query": "{averageChange} contains '-'", "column_id": "averageChange"},
+        {"if": {"filter_query": '{action} contains "downgrad"', "column_id": "action"},
          "color": COLORS["bad"], "fontWeight": "600"},
     ]
 
     return html.Div([
-        dcc.Store(id="sp3-overview-store"),
+        # Triggers the market-wide grades news fetch on first render.
         dcc.Interval(id="sp3-init", interval=400, max_intervals=1),
 
         section_header(
-            "Sprint 3 — Sector Analysis",
-            "Overview: today's sector performance, valuations, and market movers. "
-            "Deep Dive: compare historical sector trends side by side.",
+            "Sprint 3 — Analysts",
+            "What Wall Street thinks: price targets, recommendation distribution, "
+            "recent rating actions, and forward estimates.",
         ),
 
-        # ── Overview toolbar ─────────────────────────────────────────────
+        # ── Toolbar ──────────────────────────────────────────────────────
         html.Div([
-            btn("Refresh", "sp3-refresh-btn", primary=True),
-            status_label("sp3-ov-status"),
+            html.Label("Ticker:",
+                       style={"color": COLORS["text_dim"], "fontSize": "12px",
+                              "whiteSpace": "nowrap"}),
+            text_input("sp3-ticker", value="AAPL", width="120px"),
+            btn("Fetch", "sp3-fetch-btn", primary=True),
         ], className="toolbar-row"),
 
-        # ── Overview: performance + PE charts ────────────────────────────
+        # ── Price target stat cards ──────────────────────────────────────
+        subsection_title("Price Targets"),
+        html.Div([
+            html.Div([
+                html.Div("Current",   className="stat-label"),
+                html.Div("—", id="sp3-stat-current",   className="stat-value"),
+            ], className="stat-card"),
+            html.Div([
+                html.Div("Consensus", className="stat-label"),
+                html.Div("—", id="sp3-stat-consensus", className="stat-value"),
+            ], className="stat-card"),
+            html.Div([
+                html.Div("Median",    className="stat-label"),
+                html.Div("—", id="sp3-stat-median",    className="stat-value"),
+            ], className="stat-card"),
+            html.Div([
+                html.Div("High",      className="stat-label"),
+                html.Div("—", id="sp3-stat-high",      className="stat-value"),
+            ], className="stat-card"),
+            html.Div([
+                html.Div("Low",       className="stat-label"),
+                html.Div("—", id="sp3-stat-low",       className="stat-value"),
+            ], className="stat-card"),
+        ], className="stats-row"),
+
+        # ── Recommendation distribution ──────────────────────────────────
+        subsection_title("Recommendation Distribution"),
         html.Div([
             html.Div(
-                dcc.Loading(type="circle", color=COLORS["accent"],
-                            children=dcc.Graph(
-                                id="sp3-perf-chart",
-                                figure=_empty_fig(300),
-                                config={"displayModeBar": False},
-                            )),
-                style={"flex": "2", "minWidth": "320px"},
+                dcc.Loading(
+                    type="circle", color=COLORS["accent"],
+                    children=dcc.Graph(
+                        id="sp3-bhs-chart",
+                        figure=_empty_fig(),
+                        config={"displayModeBar": False},
+                        style={"height": "260px"},
+                    ),
+                ),
+                style={"flex": "2", "minWidth": "300px"},
             ),
-            html.Div(
-                dcc.Loading(type="circle", color=COLORS["accent"],
-                            children=dcc.Graph(
-                                id="sp3-pe-chart",
-                                figure=_empty_fig(300),
-                                config={"displayModeBar": False},
-                            )),
-                style={"flex": "1", "minWidth": "240px"},
-            ),
-        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap",
+            html.Div([
+                html.Div([
+                    html.Div("Total Analysts", className="stat-label"),
+                    html.Div("—", id="sp3-stat-total", className="stat-value"),
+                ], className="stat-card"),
+                html.Div([
+                    html.Div("Buy + Strong Buy", className="stat-label"),
+                    html.Div("—", id="sp3-stat-buys", className="stat-value"),
+                ], className="stat-card"),
+                html.Div([
+                    html.Div("Sell + Strong Sell", className="stat-label"),
+                    html.Div("—", id="sp3-stat-sells", className="stat-value"),
+                ], className="stat-card"),
+            ], style={"flex": "1", "minWidth": "240px",
+                      "display": "flex", "flexDirection": "column", "gap": "8px"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap",
                   "marginBottom": "16px"}),
 
-        # ── Sector performance table (collapsible sub-section) ────────────
-        html.Details([
-            html.Summary("Sector Performance Table",
-                         style={"cursor": "pointer", "color": COLORS["text_dim"],
-                                "fontSize": "12px", "marginBottom": "6px",
-                                "userSelect": "none"}),
-            dash_table.DataTable(
-                id="sp3-sector-table",
-                columns=[
-                    {"name": "Sector",    "id": "sector"},
-                    {"name": "Avg % Chg", "id": "averageChange"},
-                    {"name": "P/E",       "id": "pe"},
-                ],
-                data=[],
-                page_size=12,
-                sort_action="native",
-                **ind_ts,
-            ),
-        ], style={"marginBottom": "16px"}),
-
-        # ── Movers row ────────────────────────────────────────────────────
-        html.Div("Market Movers", className="subsection-title",
-                 style={"marginBottom": "8px"}),
-        html.Div([
-            html.Div([
-                html.Div("Biggest Gainers", className="dim-text",
-                         style={"marginBottom": "4px"}),
-                dcc.Loading(type="circle", color=COLORS["accent"],
-                            children=dash_table.DataTable(
-                                id="sp3-gainers",
-                                columns=_MOVER_COLS, data=[],
-                                page_size=10,
-                                **_mover_ts(COLORS["good"]),
-                            )),
-            ], style={"flex": "1", "minWidth": "240px"}),
-
-            html.Div([
-                html.Div("Biggest Losers", className="dim-text",
-                         style={"marginBottom": "4px"}),
-                dcc.Loading(type="circle", color=COLORS["accent"],
-                            children=dash_table.DataTable(
-                                id="sp3-losers",
-                                columns=_MOVER_COLS, data=[],
-                                page_size=10,
-                                **_mover_ts(COLORS["bad"]),
-                            )),
-            ], style={"flex": "1", "minWidth": "240px"}),
-
-            html.Div([
-                html.Div("Most Active", className="dim-text",
-                         style={"marginBottom": "4px"}),
-                dcc.Loading(type="circle", color=COLORS["accent"],
-                            children=dash_table.DataTable(
-                                id="sp3-actives",
-                                columns=_MOVER_COLS, data=[],
-                                page_size=10,
-                                **_mover_ts(),
-                            )),
-            ], style={"flex": "1", "minWidth": "240px"}),
-        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap",
-                  "marginBottom": "24px"}),
-
-        # ─────────────────────────────────────────────────────────────────
-        # Sector Deep Dive
-        # ─────────────────────────────────────────────────────────────────
-        html.Hr(style={"borderColor": COLORS["border"], "margin": "8px 0 16px"}),
-
-        section_header(
-            "Sector Deep Dive",
-            "Pick a primary sector and up to 3 peers to compare historical "
-            "performance. Industries for the primary sector are shown below.",
-        ),
-
-        # Toolbar
-        html.Div([
-            html.Div([
-                html.Label("Primary sector", className="dim-text",
-                           style={"display": "block", "marginBottom": "4px",
-                                  "fontSize": "11px"}),
-                dcc.Dropdown(
-                    id="sp3-primary-sector",
-                    options=sector_opts,
-                    placeholder="Pick a sector…",
-                    clearable=False,
-                    style={"width": "220px", "fontSize": "13px"},
-                ),
-            ]),
-            html.Div([
-                html.Label("Compare with (up to 3)", className="dim-text",
-                           style={"display": "block", "marginBottom": "4px",
-                                  "fontSize": "11px"}),
-                dcc.Dropdown(
-                    id="sp3-compare-sectors",
-                    options=sector_opts,
-                    multi=True,
-                    placeholder="Add comparison sectors…",
-                    style={"width": "340px", "fontSize": "13px"},
-                ),
-            ]),
-            html.Div([
-                html.Label("Period", className="dim-text",
-                           style={"display": "block", "marginBottom": "4px",
-                                  "fontSize": "11px"}),
-                dcc.Dropdown(
-                    id="sp3-period",
-                    options=period_opts,
-                    value=90,
-                    clearable=False,
-                    style={"width": "120px", "fontSize": "13px"},
-                ),
-            ]),
-            html.Div(
-                btn("Load", "sp3-dive-btn", primary=True),
-                style={"alignSelf": "flex-end", "paddingBottom": "1px"},
-            ),
-            status_label("sp3-dive-status"),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap",
-                  "alignItems": "flex-end", "marginBottom": "16px"}),
-
-        # Deep Dive results
+        # ── Recent rating actions (per ticker) ───────────────────────────
+        subsection_title("Recent Rating Actions"),
         dcc.Loading(
             type="circle", color=COLORS["accent"],
-            children=html.Div(id="sp3-dive-content",
-                              children=html.Div(
-                                  "Select a primary sector and click Load.",
-                                  className="dim-text",
-                                  style={"padding": "24px 0"},
-                              )),
+            children=dash_table.DataTable(
+                id="sp3-grades-table",
+                columns=[
+                    {"name": "Date",    "id": "date"},
+                    {"name": "Firm",    "id": "firm"},
+                    {"name": "Action",  "id": "action"},
+                    {"name": "From",    "id": "previous"},
+                    {"name": "To",      "id": "new_grade"},
+                ],
+                data=[],
+                page_size=10,
+                sort_action="native",
+                **grades_ts,
+            ),
         ),
+
+        # ── Forward estimates (per ticker) ───────────────────────────────
+        html.Details([
+            html.Summary("Forward Analyst Estimates",
+                         style={"cursor": "pointer", "color": COLORS["text_dim"],
+                                "fontSize": "12px", "marginTop": "12px",
+                                "marginBottom": "6px", "userSelect": "none"}),
+            dash_table.DataTable(
+                id="sp3-estimates-table",
+                columns=[{"name": "—", "id": "placeholder"}],  # rebuilt by callback
+                data=[],
+                page_size=8,
+                **ts,
+            ),
+        ], style={"marginBottom": "20px"}),
+
+        status_label("sp3-status"),
+
+        # ── Market-wide grades feed (independent of ticker) ──────────────
+        section_header(
+            "Market-Wide Grade Actions",
+            "Latest upgrades / downgrades across all symbols — refreshes when you "
+            "open the tab.",
+        ),
+        dcc.Loading(
+            type="circle", color=COLORS["accent"],
+            children=dash_table.DataTable(
+                id="sp3-market-grades",
+                columns=[
+                    {"name": "Date",    "id": "date"},
+                    {"name": "Symbol",  "id": "symbol"},
+                    {"name": "Firm",    "id": "firm"},
+                    {"name": "Action",  "id": "action"},
+                    {"name": "From",    "id": "previous"},
+                    {"name": "To",      "id": "new_grade"},
+                ],
+                data=[],
+                page_size=20,
+                sort_action="native",
+                **grades_ts,
+            ),
+        ),
+        status_label("sp3-market-status"),
 
     ], className="tab-content")
 
@@ -378,283 +353,203 @@ def register_callbacks(app: dash.Dash) -> None:
     if not config.has_fmp_key():
         return
 
-    # ── Overview: auto-load + refresh ────────────────────────────────────
-
+    # ── Per-ticker fetch ─────────────────────────────────────────────────
     @app.callback(
-        Output("sp3-perf-chart",    "figure"),
-        Output("sp3-pe-chart",      "figure"),
-        Output("sp3-sector-table",  "data"),
-        Output("sp3-gainers",       "data"),
-        Output("sp3-losers",        "data"),
-        Output("sp3-actives",       "data"),
-        Output("sp3-ov-status",     "children"),
-        Input("sp3-init",           "n_intervals"),
-        Input("sp3-refresh-btn",    "n_clicks"),
-        prevent_initial_call=False,
-    )
-    def load_overview(_init, _refresh):
-        import pandas as pd
-        from ada_research.core.sector_data import get_bundle
-
-        try:
-            force  = dash.ctx.triggered_id == "sp3-refresh-btn"
-            bundle = get_bundle(force=force)
-            df_sector = bundle.sector_snapshot
-            df_pe     = bundle.sector_pe
-            df_gain   = bundle.gainers
-            df_lose   = bundle.losers
-            df_act    = bundle.actives
-        except Exception as exc:
-            log.exception("Sprint 3 overview fetch failed")
-            e = _empty_fig()
-            return e, e, [], [], [], [], f"Error: {exc}"
-
-        # Performance bar chart
-        if not df_sector.empty and "averageChange" in df_sector.columns:
-            df_s = df_sector.copy()
-            df_s["averageChange"] = pd.to_numeric(df_s["averageChange"], errors="coerce")
-            df_s = df_s.dropna(subset=["averageChange"]).sort_values("averageChange")
-            perf_fig = _bar_chart(
-                df_s["sector"].tolist(),
-                df_s["averageChange"].tolist(),
-                "Sector Performance — Today",
-            )
-        else:
-            perf_fig = _empty_fig()
-
-        # PE bar chart
-        if not df_pe.empty and "pe" in df_pe.columns:
-            df_p = df_pe.copy()
-            df_p["pe"] = pd.to_numeric(df_p["pe"], errors="coerce")
-            df_p = df_p[(df_p["pe"] > 0) & (df_p["pe"] < 500)].dropna(subset=["pe"])
-            df_p = df_p.sort_values("pe")
-            pe_fig = _bar_chart(
-                df_p["sector"].tolist(),
-                df_p["pe"].tolist(),
-                "Sector P/E — Today",
-                color_by_sign=False,
-                fmt_pct=False,
-            )
-        else:
-            pe_fig = _empty_fig()
-
-        # Merged sector table (perf + PE joined on sector name)
-        sector_rows = []
-        if not df_sector.empty:
-            df_s2 = df_sector.copy()
-            df_s2["averageChange"] = pd.to_numeric(df_s2["averageChange"], errors="coerce")
-            if not df_pe.empty:
-                df_pe2 = df_pe.copy()
-                df_pe2["pe"] = pd.to_numeric(df_pe2["pe"], errors="coerce")
-                merged = df_s2.merge(df_pe2[["sector", "pe"]], on="sector", how="left")
-            else:
-                merged = df_s2.copy()
-                merged["pe"] = None
-            merged = merged.sort_values("averageChange", ascending=False)
-            for _, r in merged.iterrows():
-                chg = r.get("averageChange")
-                pe  = r.get("pe")
-                sector_rows.append({
-                    "sector":        str(r.get("sector", "")),
-                    "averageChange": f"{chg:+.2f}%" if pd.notna(chg) else "—",
-                    "pe":            f"{pe:.1f}x" if pe is not None and pd.notna(pe) else "—",
-                })
-
-        def mover_rows(df: pd.DataFrame) -> list[dict]:
-            if df.empty:
-                return []
-            out = []
-            for _, r in df.head(15).iterrows():
-                chg = r.get("changesPercentage")
-                out.append({
-                    "symbol":     str(r.get("symbol", "")),
-                    "name":       str(r.get("name", ""))[:32],
-                    "price":      f"${float(r['price']):,.2f}" if r.get("price") else "—",
-                    "pct_change": f"{chg:+.2f}%" if chg is not None and pd.notna(chg) else "—",
-                })
-            return out
-
-        age = f" (cached {int(bundle.age_seconds)}s ago)" if bundle.age_seconds > 5 else ""
-        return (
-            perf_fig, pe_fig, sector_rows,
-            mover_rows(df_gain), mover_rows(df_lose), mover_rows(df_act),
-            f"Updated.{age}",
-        )
-
-    # ── Sector Deep Dive ─────────────────────────────────────────────────
-
-    @app.callback(
-        Output("sp3-dive-content", "children"),
-        Output("sp3-dive-status",  "children"),
-        Input("sp3-dive-btn",      "n_clicks"),
-        State("sp3-primary-sector",  "value"),
-        State("sp3-compare-sectors", "value"),
-        State("sp3-period",          "value"),
+        Output("sp3-stat-current",    "children"),
+        Output("sp3-stat-consensus",  "children"),
+        Output("sp3-stat-median",     "children"),
+        Output("sp3-stat-high",       "children"),
+        Output("sp3-stat-low",        "children"),
+        Output("sp3-stat-total",      "children"),
+        Output("sp3-stat-buys",       "children"),
+        Output("sp3-stat-sells",      "children"),
+        Output("sp3-bhs-chart",       "figure"),
+        Output("sp3-grades-table",    "data"),
+        Output("sp3-estimates-table", "columns"),
+        Output("sp3-estimates-table", "data"),
+        Output("sp3-status",          "children"),
+        Input("sp3-fetch-btn", "n_clicks"),
+        State("sp3-ticker",    "value"),
         prevent_initial_call=True,
     )
-    def load_dive(_n, primary, compare_sectors, period):
-        import pandas as pd
-        from ada_research.core.sector_data import get_bundle
+    def fetch(n_clicks, ticker_val):
+        from ada_research.core.fmp_client import FmpClient
 
-        if not primary:
+        if not ticker_val or not ticker_val.strip():
             raise PreventUpdate
 
-        days    = int(period or 90)
-        compare = list(compare_sectors or [])[:3]
-        compare = [s for s in compare if s != primary]
+        ticker = ticker_val.strip().upper()
+        try:
+            client = FmpClient()
+        except Exception as exc:
+            log.exception("FMP client init failed")
+            return _err_tuple(f"Error: {exc}")
+
+        # Fetch in one batch — every call goes through `safe()` so a single
+        # premium-gated endpoint can't take down the whole tab.
+        try:
+            quote_obj   = client.quote(ticker) or {}
+            consensus   = client.price_target_consensus(ticker)
+            grades_sum  = client.grades_summary(ticker)
+            grades_df   = client.grades(ticker)
+            estimates   = client.analyst_estimates(ticker, period="annual", limit=10)
+        except Exception as exc:
+            log.exception("FMP analyst fetch failed for %s", ticker)
+            return _err_tuple(f"Error: {exc}")
+
+        # ── Price targets ────────────────────────────────────────────────
+        current = quote_obj.get("price")
+        cons    = _first_row(consensus)
+
+        current_str   = _fmt_money(current)
+        consensus_str = _fmt_money(cons.get("targetConsensus")) + _implied_pct(cons.get("targetConsensus"), current)
+        median_str    = _fmt_money(cons.get("targetMedian"))    + _implied_pct(cons.get("targetMedian"),    current)
+        high_str      = _fmt_money(cons.get("targetHigh"))      + _implied_pct(cons.get("targetHigh"),      current)
+        low_str       = _fmt_money(cons.get("targetLow"))       + _implied_pct(cons.get("targetLow"),       current)
+
+        # ── BHS distribution ─────────────────────────────────────────────
+        gs = _first_row(grades_sum)
+        # Coerce missing/None to 0 so the chart still renders zeros.
+        counts = {k: int(gs.get(k) or 0) for k, _, _ in _BHS_KEYS}
+        total  = sum(counts.values())
+        buys   = counts.get("strongBuy",  0) + counts.get("buy",  0)
+        sells  = counts.get("strongSell", 0) + counts.get("sell", 0)
+
+        bhs_fig = _bhs_chart(counts, ticker) if total > 0 else _empty_fig(
+            msg="No analyst ratings available"
+        )
+
+        total_str = str(total) if total else "—"
+        buys_str  = str(buys)  if total else "—"
+        sells_str = str(sells) if total else "—"
+
+        # ── Grade actions (per ticker) ──────────────────────────────────
+        grades_rows = _format_grades(grades_df, include_symbol=False)
+
+        # ── Forward estimates ────────────────────────────────────────────
+        est_cols, est_rows = _format_estimates(estimates)
+
+        status = (f"{ticker} loaded — {total} analysts, {len(grades_rows)} recent actions."
+                  if total or grades_rows else
+                  f"{ticker} loaded — limited analyst coverage available.")
+
+        return (
+            current_str, consensus_str, median_str, high_str, low_str,
+            total_str, buys_str, sells_str,
+            bhs_fig,
+            grades_rows,
+            est_cols, est_rows,
+            status,
+        )
+
+    # ── Market-wide grade actions feed ───────────────────────────────────
+    @app.callback(
+        Output("sp3-market-grades", "data"),
+        Output("sp3-market-status", "children"),
+        Input("sp3-init", "n_intervals"),
+        prevent_initial_call=False,
+    )
+    def fetch_market(_n):
+        from ada_research.core.fmp_client import FmpClient
 
         try:
-            bundle = get_bundle()
-
-            # Historical performance — bundle has 90 days; tail() to the requested window
-            hist_data: dict[str, pd.DataFrame] = {}
-            for s in [primary] + compare:
-                df = bundle.hist_sector_perf.get(s, pd.DataFrame())
-                hist_data[s] = df.tail(days).copy() if not df.empty else df
-
-            # Historical PE — bundle has 180 days; slice to requested window
-            pe_raw = bundle.hist_sector_pe.get(primary, pd.DataFrame())
-            hist_pe = pe_raw.tail(days).copy() if not pe_raw.empty else pe_raw
-
-            # Today's industry snapshot (pre-fetched)
-            df_ind = bundle.industry_snapshot.copy() if not bundle.industry_snapshot.empty else pd.DataFrame()
-
+            client = FmpClient()
+            df = client.grades_latest_news(limit=30)
         except Exception as exc:
-            log.exception("Sprint 3 deep dive failed")
-            return (
-                html.Div(f"Error: {exc}", className="dim-text"),
-                f"Error: {exc}",
-            )
+            log.exception("FMP latest grades fetch failed")
+            return [], f"Error loading market grades: {exc}"
 
-        # ── Multi-sector performance chart ──────────────────────────────
-        perf_fig = go.Figure()
-        all_sectors_ordered = [primary] + compare
-        palette = [COLORS["accent"]] + _COMPARE_COLORS[:len(compare)]
+        rows = _format_grades(df, include_symbol=True)
+        return rows, f"{len(rows)} latest market actions." if rows else "No market actions returned."
 
-        for idx, sec in enumerate(all_sectors_ordered):
-            df_h = hist_data.get(sec, pd.DataFrame())
-            if df_h.empty:
-                continue
-            is_primary = (sec == primary)
-            perf_fig.add_trace(go.Scatter(
-                x=df_h["date"],
-                y=df_h["averageChange"],
-                mode="lines",
-                name=sec,
-                line={
-                    "color": palette[idx],
-                    "width": 2.5 if is_primary else 1.5,
-                    "dash":  "solid" if is_primary else "dot",
-                },
-                hovertemplate=f"<b>{sec}</b><br>%{{x|%b %d}}: %{{y:+.2f}}%<extra></extra>",
-            ))
 
-        if perf_fig.data:
-            perf_fig.add_hline(y=0, line_dash="dash", line_color=COLORS["border"],
-                               line_width=1)
-            _dark_line(perf_fig, height=360)
-            perf_fig.update_layout(
-                title={"text": f"Historical Daily % Change — {days}-day window",
-                       "font": {"size": 13, "color": COLORS["text"]}},
-                yaxis_title="Avg Daily % Change",
-            )
-        else:
-            perf_fig = _empty_fig(360)
+# ---------------------------------------------------------------------------
+# Row formatters (kept out of the callback for testability)
+# ---------------------------------------------------------------------------
 
-        # ── Historical PE chart (primary only) ──────────────────────────
-        pe_fig = go.Figure()
-        if not hist_pe.empty:
-            pe_fig.add_trace(go.Scatter(
-                x=hist_pe["date"],
-                y=hist_pe["pe"],
-                mode="lines",
-                name=f"{primary} P/E",
-                line={"color": COLORS["accent"], "width": 2},
-                fill="tozeroy",
-                fillcolor=f"rgba(91,155,213,0.12)",
-                hovertemplate="P/E: %{y:.1f}<extra></extra>",
-            ))
-            _dark_line(pe_fig, height=280)
-            pe_fig.update_layout(
-                title={"text": f"{primary} — Historical P/E Ratio ({days} days)",
-                       "font": {"size": 13, "color": COLORS["text"]}},
-                yaxis_title="P/E",
-                margin={"l": 60, "r": 20, "t": 40, "b": 40},
-            )
-        else:
-            pe_fig = _empty_fig(280)
+def _format_grades(df: pd.DataFrame, include_symbol: bool) -> list[dict]:
+    """Format per-ticker or market-wide grades feed rows.
 
-        # ── Industry performance today ──────────────────────────────────
-        ind_fig = _empty_fig(300)
-        ind_rows: list[dict] = []
-        ind_ts   = TABLE_STYLES()
-        base_sdc = ind_ts.pop("style_data_conditional", [])
-        ind_ts["style_data_conditional"] = base_sdc + [
-            {"if": {"filter_query": "{averageChange} contains '+'",
-                    "column_id": "averageChange"},
-             "color": COLORS["good"], "fontWeight": "600"},
-            {"if": {"filter_query": "{averageChange} contains '-'",
-                    "column_id": "averageChange"},
-             "color": COLORS["bad"], "fontWeight": "600"},
-        ]
+    Handles FMP's column-naming variation: `gradingCompany` vs `firm`,
+    `publishedDate` vs `date`, `previousGrade` vs `priorGrade`, etc.
+    """
+    if df is None or df.empty:
+        return []
 
-        if not df_ind.empty and "averageChange" in df_ind.columns:
-            df_ind = df_ind.copy()
-            df_ind["averageChange"] = pd.to_numeric(df_ind["averageChange"], errors="coerce")
-            df_ind = df_ind.dropna(subset=["averageChange"])
-            df_ind_sorted = df_ind.sort_values("averageChange", ascending=False)
+    def _pick(row: pd.Series, *names: str) -> Any:
+        for n in names:
+            if n in row and pd.notna(row[n]):
+                return row[n]
+        return None
 
-            # Top 10 + bottom 10 for the bar chart
-            top10    = df_ind_sorted.head(10)
-            bot10    = df_ind_sorted.tail(10).iloc[::-1]
-            vis_rows = pd.concat([top10, bot10]).drop_duplicates()
-            vis_rows = vis_rows.sort_values("averageChange")
-            ind_fig  = _bar_chart(
-                vis_rows["industry"].tolist(),
-                vis_rows["averageChange"].tolist(),
-                "Top & Bottom 10 Industries Today",
-            )
+    rows: list[dict] = []
+    for _, r in df.head(30).iterrows():
+        date_val = _pick(r, "date", "publishedDate")
+        if isinstance(date_val, str) and "T" in date_val:
+            date_val = date_val.split("T")[0]
 
-            # Full table
-            for _, r in df_ind_sorted.iterrows():
-                chg = r.get("averageChange")
-                ind_rows.append({
-                    "industry":     str(r.get("industry", "")),
-                    "averageChange": f"{chg:+.2f}%" if pd.notna(chg) else "—",
-                })
+        row = {
+            "date":       str(date_val) if date_val is not None else "—",
+            "firm":       str(_pick(r, "gradingCompany", "firm")          or "—"),
+            "action":     str(_pick(r, "action")                          or "—"),
+            "previous":   str(_pick(r, "previousGrade", "priorGrade")     or "—"),
+            "new_grade":  str(_pick(r, "newGrade", "currentGrade")        or "—"),
+        }
+        if include_symbol:
+            row["symbol"] = str(_pick(r, "symbol") or "—")
+        rows.append(row)
+    return rows
 
-        # ── Assemble dive content ───────────────────────────────────────
-        content = html.Div([
 
-            # Performance comparison chart
-            html.Div("Historical Performance Comparison", className="subsection-title"),
-            dcc.Graph(figure=perf_fig, config={"displayModeBar": True},
-                      style={"marginBottom": "16px"}),
+def _format_estimates(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """Build (columns, data) for the forward-estimates table.
 
-            # Historical PE chart
-            html.Div(f"{primary} — Historical P/E", className="subsection-title"),
-            dcc.Graph(figure=pe_fig, config={"displayModeBar": False},
-                      style={"marginBottom": "16px"}),
+    Returns whichever subset of `_ESTIMATE_DISPLAY_COLS` actually exists in
+    the response, so the table degrades gracefully on free tier or when FMP
+    renames a field.
+    """
+    if df is None or df.empty:
+        return [{"name": "—", "id": "placeholder"}], []
 
-            # Industry bar chart + table
-            html.Div("Industry Performance Today", className="subsection-title"),
-            dcc.Graph(figure=ind_fig, config={"displayModeBar": False},
-                      style={"marginBottom": "12px"}),
+    available = [(src, label) for src, label in _ESTIMATE_DISPLAY_COLS if src in df.columns]
+    if not available:
+        return [{"name": "—", "id": "placeholder"}], []
 
-            html.Details([
-                html.Summary("Full industry table",
-                             style={"cursor": "pointer", "color": COLORS["text_dim"],
-                                    "fontSize": "12px", "marginBottom": "6px",
-                                    "userSelect": "none"}),
-                dash_table.DataTable(
-                    columns=_INDUSTRY_COLS,
-                    data=ind_rows,
-                    page_size=20,
-                    sort_action="native",
-                    **ind_ts,
-                ),
-            ]),
+    cols = [{"name": label, "id": src} for src, label in available]
+    rows: list[dict] = []
+    for _, r in df.head(8).iterrows():
+        row = {}
+        for src, _ in available:
+            v = r.get(src)
+            if src == "date" and v is not None:
+                v = str(v).split("T")[0] if "T" in str(v) else str(v)
+            elif src.startswith("estimatedRevenue") and v is not None:
+                v = _fmt_money(v, big=True)
+            elif src.startswith("estimatedEps") and v is not None:
+                try:
+                    v = f"${float(v):.2f}"
+                except (TypeError, ValueError):
+                    v = "—"
+            elif v is None or (isinstance(v, float) and v != v):
+                v = "—"
+            else:
+                v = str(v)
+            row[src] = v
+        rows.append(row)
+    return cols, rows
 
-        ])
 
-        return content, f"{primary} loaded ({days}-day window)."
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+
+def _err_tuple(msg: str) -> tuple:
+    """Return a 13-element tuple matching the per-ticker callback signature."""
+    return (
+        "—", "—", "—", "—", "—",     # price target stats
+        "—", "—", "—",                # bhs stats
+        _empty_fig(msg="—"),
+        [],                            # grades table
+        [{"name": "—", "id": "placeholder"}], [],  # estimates cols + data
+        msg,
+    )

@@ -1,1 +1,1 @@
-"""UI subpackage: theme, widgets, main window."""
+"""UI subpackage: theme, components, layout."""
